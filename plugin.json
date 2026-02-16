@@ -5,7 +5,7 @@
     "homepage_url": "https://github.com/alun/mattermost-plugin-user-status-dashboard",
     "support_url": "https://github.com/alun/mattermost-plugin-user-status-dashboard/issues",
     "icon_path": "assets/icon.svg",
-    "min_server_version": "9.0.0",
+    "min_server_version": "9.8.0",
     "server": {
         "executables": {
             "linux-amd64": "server/dist/plugin-linux-amd64",

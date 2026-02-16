@@ -70,22 +70,22 @@ const styles: Record<string, React.CSSProperties> = {
         height: '32px',
         borderRadius: '50%',
         marginRight: '10px',
-        backgroundColor: 'rgba(var(--center-channel-color-rgb), 0.16)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '14px',
-        fontWeight: 600,
-        color: 'var(--center-channel-color)',
         position: 'relative',
         flexShrink: 0,
     },
+    avatarImg: {
+        width: '32px',
+        height: '32px',
+        borderRadius: '50%',
+        objectFit: 'cover' as const,
+        display: 'block',
+    },
     statusDot: {
         position: 'absolute',
-        bottom: '-1px',
-        right: '-1px',
-        width: '12px',
-        height: '12px',
+        bottom: '-2px',
+        right: '-2px',
+        width: '14px',
+        height: '14px',
         borderRadius: '50%',
         border: '2px solid var(--center-channel-bg)',
     },
@@ -153,9 +153,14 @@ const UserStatusRow: React.FC<Props> = ({user, onRemove}) => {
     const lastActivity = user.status !== 'online' ? formatLastActivity(user.last_activity_at) : '';
 
     const handleClick = () => {
-        // Navigate to DM with this user
-        const baseUrl = window.location.origin;
-        window.location.href = `${baseUrl}/messages/@${user.username}`;
+        const teamName = window.location.pathname.split('/')[1] || '';
+        const dmPath = `/${teamName}/messages/@${user.username}`;
+        const nav = (window as any).WebappUtils?.browserHistory;
+        if (nav?.push) {
+            nav.push(dmPath);
+        } else {
+            window.location.assign(dmPath);
+        }
     };
 
     return (
@@ -180,7 +185,11 @@ const UserStatusRow: React.FC<Props> = ({user, onRemove}) => {
             title={`Message @${user.username}`}
         >
             <div style={styles.avatar}>
-                {initials}
+                <img
+                    style={styles.avatarImg}
+                    src={`/api/v4/users/${user.user_id}/image?_=${user.last_activity_at || 0}`}
+                    alt={initials}
+                />
                 <div
                     style={{
                         ...styles.statusDot,

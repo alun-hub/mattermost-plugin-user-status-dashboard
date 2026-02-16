@@ -136,6 +136,17 @@ func (p *Plugin) handleGetStatuses(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	users, appErr := p.API.GetUsersByIds(watched.UserIDs)
+	if appErr != nil {
+		http.Error(w, appErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	userMap := make(map[string]*model.User, len(users))
+	for _, u := range users {
+		userMap[u.Id] = u
+	}
+
 	result := make([]UserStatusInfo, 0, len(watched.UserIDs))
 	for _, uid := range watched.UserIDs {
 		info, ok := statusMap[uid]
@@ -146,8 +157,7 @@ func (p *Plugin) handleGetStatuses(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		user, appErr := p.API.GetUser(uid)
-		if appErr == nil {
+		if user, ok := userMap[uid]; ok {
 			info.Username = user.Username
 			info.FirstName = user.FirstName
 			info.LastName = user.LastName

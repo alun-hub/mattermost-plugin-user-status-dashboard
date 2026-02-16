@@ -6,7 +6,7 @@ import UserSelector from './user_selector';
 import UserStatusRow from './user_status_row';
 
 const PLUGIN_ID = 'com.github.alun.user-status-dashboard';
-const POLL_INTERVAL = 30000;
+const FALLBACK_POLL_INTERVAL = 300000; // 5 min fallback for custom status changes
 
 const styles: Record<string, React.CSSProperties> = {
     container: {
@@ -83,11 +83,40 @@ const SidebarPanel: React.FC = () => {
     useEffect(() => {
         fetchStatuses();
 
-        pollRef.current = setInterval(fetchStatuses, POLL_INTERVAL);
+        pollRef.current = setInterval(fetchStatuses, FALLBACK_POLL_INTERVAL);
+
+        const handleStatusChange = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (!detail) {
+                return;
+            }
+            const userId = detail.user_id;
+            const status = detail.status;
+            if (!userId || !status) {
+                return;
+            }
+            setStatuses((prev) =>
+                prev.map((u) =>
+                    u.user_id === userId
+                        ? {...u, status, last_activity_at: Date.now()}
+                        : u,
+                ),
+            );
+        };
+
+        const handleReconnect = () => {
+            fetchStatuses();
+        };
+
+        window.addEventListener('status_dashboard_status_change', handleStatusChange);
+        window.addEventListener('status_dashboard_reconnect', handleReconnect);
+
         return () => {
             if (pollRef.current) {
                 clearInterval(pollRef.current);
             }
+            window.removeEventListener('status_dashboard_status_change', handleStatusChange);
+            window.removeEventListener('status_dashboard_reconnect', handleReconnect);
         };
     }, [fetchStatuses]);
 

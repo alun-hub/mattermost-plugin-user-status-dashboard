@@ -26,6 +26,16 @@ export default class Plugin {
             () => store.dispatch(toggleRHSPlugin),
             'Status Dashboard',
         );
+
+        registry.registerWebSocketEventHandler('status_change', (msg: any) => {
+            window.dispatchEvent(
+                new CustomEvent('status_dashboard_status_change', {detail: msg.data}),
+            );
+        });
+
+        registry.registerReconnectHandler(() => {
+            window.dispatchEvent(new CustomEvent('status_dashboard_reconnect'));
+        });
     }
 }
 

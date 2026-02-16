@@ -119,6 +119,21 @@ const styles: Record<string, React.CSSProperties> = {
         width: '28px',
         height: '28px',
         borderRadius: '50%',
+        marginRight: '10px',
+        flexShrink: 0,
+        overflow: 'hidden',
+    },
+    resultAvatarImg: {
+        width: '28px',
+        height: '28px',
+        borderRadius: '50%',
+        objectFit: 'cover' as const,
+        display: 'block',
+    },
+    groupAvatar: {
+        width: '28px',
+        height: '28px',
+        borderRadius: '50%',
         backgroundColor: 'rgba(var(--center-channel-color-rgb), 0.16)',
         display: 'flex',
         alignItems: 'center',
@@ -405,7 +420,13 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
                                             (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
                                         }}
                                     >
-                                        <div style={styles.resultAvatar}>{initial}</div>
+                                        <div style={styles.resultAvatar}>
+                                            <img
+                                                style={styles.resultAvatarImg}
+                                                src={`/api/v4/users/${user.id}/image`}
+                                                alt={initial}
+                                            />
+                                        </div>
                                         <div style={styles.resultInfo}>
                                             <div style={styles.resultName}>{displayName}</div>
                                             <div style={styles.resultUsername}>@{user.username}</div>
@@ -448,7 +469,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
                                             (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
                                         }}
                                     >
-                                        <div style={styles.resultAvatar}>{initial}</div>
+                                        <div style={styles.groupAvatar}>{initial}</div>
                                         <div style={styles.resultInfo}>
                                             <div style={styles.resultName}>{displayName}</div>
                                             <div style={styles.resultUsername}>
