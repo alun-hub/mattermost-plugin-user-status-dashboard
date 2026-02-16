@@ -16,6 +16,15 @@ interface SearchResult {
     nickname: string;
 }
 
+interface GroupResult {
+    id: string;
+    name: string;
+    display_name: string;
+    member_count: number;
+}
+
+type Tab = 'users' | 'groups';
+
 const styles: Record<string, React.CSSProperties> = {
     overlay: {
         position: 'fixed',
@@ -58,6 +67,26 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '20px',
         color: 'rgba(var(--center-channel-color-rgb), 0.56)',
         padding: '4px',
+    },
+    tabBar: {
+        display: 'flex',
+        borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
+    },
+    tab: {
+        flex: 1,
+        padding: '10px 16px',
+        border: 'none',
+        background: 'none',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 600,
+        color: 'rgba(var(--center-channel-color-rgb), 0.56)',
+        borderBottom: '2px solid transparent',
+        transition: 'color 0.15s, border-color 0.15s',
+    },
+    tabActive: {
+        color: 'var(--button-bg)',
+        borderBottomColor: 'var(--button-bg)',
     },
     searchContainer: {
         padding: '12px 20px',
@@ -135,15 +164,18 @@ function getDisplayName(user: SearchResult): string {
 }
 
 const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) => {
+    const [activeTab, setActiveTab] = useState<Tab>('users');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchResult[]>([]);
+    const [groupResults, setGroupResults] = useState<GroupResult[]>([]);
     const [searching, setSearching] = useState(false);
+    const [addingGroup, setAddingGroup] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         inputRef.current?.focus();
-    }, []);
+    }, [activeTab]);
 
     const searchUsers = useCallback(async (term: string) => {
         if (term.length < 2) {
@@ -167,6 +199,28 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
         }
     }, []);
 
+    const searchGroups = useCallback(async (term: string) => {
+        if (term.length < 2) {
+            setGroupResults([]);
+            return;
+        }
+
+        setSearching(true);
+        try {
+            const resp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/groups?q=` + encodeURIComponent(term), {
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+            });
+            if (resp.ok) {
+                const data: GroupResult[] = await resp.json();
+                setGroupResults(data);
+            }
+        } catch (err) {
+            // Silently handle errors
+        } finally {
+            setSearching(false);
+        }
+    }, []);
+
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setQuery(value);
@@ -176,9 +230,21 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
         }
 
         searchTimeoutRef.current = setTimeout(() => {
-            searchUsers(value);
+            if (activeTab === 'users') {
+                searchUsers(value);
+            } else {
+                searchGroups(value);
+            }
         }, 300);
-    }, [searchUsers]);
+    }, [activeTab, searchUsers, searchGroups]);
+
+    const handleTabChange = useCallback((tab: Tab) => {
+        setActiveTab(tab);
+        setQuery('');
+        setResults([]);
+        setGroupResults([]);
+        setSearching(false);
+    }, []);
 
     const handleAddUser = useCallback(async (userId: string) => {
         if (currentUserIds.includes(userId)) {
@@ -215,13 +281,79 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
         }
     }, [currentUserIds, onUserAdded, onClose]);
 
+    const handleAddGroup = useCallback(async (groupId: string) => {
+        setAddingGroup(true);
+        try {
+            const membersResp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/groups/${encodeURIComponent(groupId)}/members`, {
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+            });
+            if (!membersResp.ok) {
+                return;
+            }
+            const membersData = await membersResp.json();
+            const memberIds: string[] = membersData.user_ids || [];
+
+            const watchedResp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+            });
+            if (!watchedResp.ok) {
+                return;
+            }
+            const watchedData = await watchedResp.json();
+            const existingIds: string[] = watchedData.user_ids || [];
+
+            const merged = [...existingIds];
+            for (const id of memberIds) {
+                if (!merged.includes(id)) {
+                    merged.push(id);
+                }
+            }
+
+            await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({user_ids: merged}),
+            });
+
+            onUserAdded();
+            onClose();
+        } catch (err) {
+            // Silently handle errors
+        } finally {
+            setAddingGroup(false);
+        }
+    }, [onUserAdded, onClose]);
+
+    const tabStyle = (tab: Tab): React.CSSProperties => ({
+        ...styles.tab,
+        ...(activeTab === tab ? styles.tabActive : {}),
+    });
+
     return (
         <div style={styles.overlay} onClick={onClose}>
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
                 <div style={styles.header}>
-                    <h3 style={styles.title}>Add User to Watch</h3>
+                    <h3 style={styles.title}>Add to Watch</h3>
                     <button style={styles.closeButton} onClick={onClose}>
                         &times;
+                    </button>
+                </div>
+
+                <div style={styles.tabBar}>
+                    <button
+                        style={tabStyle('users')}
+                        onClick={() => handleTabChange('users')}
+                    >
+                        Users
+                    </button>
+                    <button
+                        style={tabStyle('groups')}
+                        onClick={() => handleTabChange('groups')}
+                    >
+                        Groups
                     </button>
                 </div>
 
@@ -230,61 +362,109 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
                         ref={inputRef}
                         style={styles.searchInput}
                         type="text"
-                        placeholder="Search for a user..."
+                        placeholder={activeTab === 'users' ? 'Search for a user...' : 'Search for a group...'}
                         value={query}
                         onChange={handleInputChange}
                     />
                 </div>
 
                 <div style={styles.results}>
-                    {searching && (
-                        <div style={styles.noResults}>Searching...</div>
-                    )}
-
-                    {!searching && query.length >= 2 && results.length === 0 && (
-                        <div style={styles.noResults}>No users found</div>
-                    )}
-
-                    {!searching && results.map((user) => {
-                        const isAdded = currentUserIds.includes(user.id);
-                        const displayName = getDisplayName(user);
-                        const initial = displayName.charAt(0).toUpperCase();
-
-                        return (
-                            <div
-                                key={user.id}
-                                style={{
-                                    ...styles.resultItem,
-                                    opacity: isAdded ? 0.5 : 1,
-                                    cursor: isAdded ? 'default' : 'pointer',
-                                }}
-                                onClick={() => handleAddUser(user.id)}
-                                onMouseEnter={(e) => {
-                                    if (!isAdded) {
-                                        (e.currentTarget as HTMLElement).style.backgroundColor =
-                                            'rgba(var(--center-channel-color-rgb), 0.08)';
-                                    }
-                                }}
-                                onMouseLeave={(e) => {
-                                    (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
-                                }}
-                            >
-                                <div style={styles.resultAvatar}>{initial}</div>
-                                <div style={styles.resultInfo}>
-                                    <div style={styles.resultName}>{displayName}</div>
-                                    <div style={styles.resultUsername}>@{user.username}</div>
-                                </div>
-                                {isAdded && (
-                                    <span style={styles.alreadyAdded}>Already watching</span>
-                                )}
-                            </div>
-                        );
-                    })}
-
-                    {!searching && query.length < 2 && (
+                    {(searching || addingGroup) && (
                         <div style={styles.noResults}>
-                            Type at least 2 characters to search
+                            {addingGroup ? 'Adding group members...' : 'Searching...'}
                         </div>
+                    )}
+
+                    {activeTab === 'users' && !searching && (
+                        <>
+                            {query.length >= 2 && results.length === 0 && (
+                                <div style={styles.noResults}>No users found</div>
+                            )}
+
+                            {results.map((user) => {
+                                const isAdded = currentUserIds.includes(user.id);
+                                const displayName = getDisplayName(user);
+                                const initial = displayName.charAt(0).toUpperCase();
+
+                                return (
+                                    <div
+                                        key={user.id}
+                                        style={{
+                                            ...styles.resultItem,
+                                            opacity: isAdded ? 0.5 : 1,
+                                            cursor: isAdded ? 'default' : 'pointer',
+                                        }}
+                                        onClick={() => handleAddUser(user.id)}
+                                        onMouseEnter={(e) => {
+                                            if (!isAdded) {
+                                                (e.currentTarget as HTMLElement).style.backgroundColor =
+                                                    'rgba(var(--center-channel-color-rgb), 0.08)';
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                                        }}
+                                    >
+                                        <div style={styles.resultAvatar}>{initial}</div>
+                                        <div style={styles.resultInfo}>
+                                            <div style={styles.resultName}>{displayName}</div>
+                                            <div style={styles.resultUsername}>@{user.username}</div>
+                                        </div>
+                                        {isAdded && (
+                                            <span style={styles.alreadyAdded}>Already watching</span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                            {query.length < 2 && (
+                                <div style={styles.noResults}>
+                                    Type at least 2 characters to search
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {activeTab === 'groups' && !searching && !addingGroup && (
+                        <>
+                            {query.length >= 2 && groupResults.length === 0 && (
+                                <div style={styles.noResults}>No groups found</div>
+                            )}
+
+                            {groupResults.map((group) => {
+                                const displayName = group.display_name || group.name;
+                                const initial = displayName.charAt(0).toUpperCase();
+
+                                return (
+                                    <div
+                                        key={group.id}
+                                        style={styles.resultItem}
+                                        onClick={() => handleAddGroup(group.id)}
+                                        onMouseEnter={(e) => {
+                                            (e.currentTarget as HTMLElement).style.backgroundColor =
+                                                'rgba(var(--center-channel-color-rgb), 0.08)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                                        }}
+                                    >
+                                        <div style={styles.resultAvatar}>{initial}</div>
+                                        <div style={styles.resultInfo}>
+                                            <div style={styles.resultName}>{displayName}</div>
+                                            <div style={styles.resultUsername}>
+                                                {group.member_count} {group.member_count === 1 ? 'member' : 'members'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+
+                            {query.length < 2 && (
+                                <div style={styles.noResults}>
+                                    Type at least 2 characters to search
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </div>

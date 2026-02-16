@@ -143,7 +143,7 @@ const SidebarPanel: React.FC = () => {
                     style={styles.addButton}
                     onClick={() => setShowSelector(true)}
                 >
-                    + Add User
+                    + Add
                 </button>
             </div>
 

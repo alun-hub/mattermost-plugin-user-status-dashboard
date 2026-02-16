@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 )
 
@@ -31,6 +33,8 @@ func (p *Plugin) initAPI() *mux.Router {
 	apiRouter.HandleFunc("/watched-users", p.handleGetWatchedUsers).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/watched-users", p.handlePutWatchedUsers).Methods(http.MethodPut)
 	apiRouter.HandleFunc("/statuses", p.handleGetStatuses).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/groups", p.handleSearchGroups).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/groups/{groupId}/members", p.handleGetGroupMembers).Methods(http.MethodGet)
 
 	return router
 }
@@ -150,16 +154,14 @@ func (p *Plugin) handleGetStatuses(w http.ResponseWriter, r *http.Request) {
 			info.Nickname = user.Nickname
 
 			if user.Props != nil {
-				if cs, ok := user.Props["customStatus"]; ok {
-					if csStr, ok := cs.(string); ok {
-						var customStatus map[string]interface{}
-						if err := json.Unmarshal([]byte(csStr), &customStatus); err == nil {
-							if text, ok := customStatus["text"].(string); ok {
-								info.CustomStatus = text
-							}
-							if emoji, ok := customStatus["emoji"].(string); ok {
-								info.CustomEmoji = emoji
-							}
+				if csStr, ok := user.Props["customStatus"]; ok && csStr != "" {
+					var customStatus map[string]interface{}
+					if err := json.Unmarshal([]byte(csStr), &customStatus); err == nil {
+						if text, ok := customStatus["text"].(string); ok {
+							info.CustomStatus = text
+						}
+						if emoji, ok := customStatus["emoji"].(string); ok {
+							info.CustomEmoji = emoji
 						}
 					}
 				}
@@ -171,4 +173,77 @@ func (p *Plugin) handleGetStatuses(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+type GroupInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	MemberCount int    `json:"member_count"`
+}
+
+func (p *Plugin) handleSearchGroups(w http.ResponseWriter, r *http.Request) {
+	term := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+
+	groups, appErr := p.API.GetGroupsBySource(model.GroupSourceCustom)
+	if appErr != nil {
+		http.Error(w, appErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var results []GroupInfo
+	for _, g := range groups {
+		if g.DeleteAt != 0 {
+			continue
+		}
+		if term != "" {
+			nameMatch := g.Name != nil && strings.Contains(strings.ToLower(*g.Name), term)
+			displayMatch := strings.Contains(strings.ToLower(g.DisplayName), term)
+			if !nameMatch && !displayMatch {
+				continue
+			}
+		}
+
+		name := ""
+		if g.Name != nil {
+			name = *g.Name
+		}
+		memberCount := 0
+		if g.MemberCount != nil {
+			memberCount = *g.MemberCount
+		}
+
+		results = append(results, GroupInfo{
+			ID:          g.Id,
+			Name:        name,
+			DisplayName: g.DisplayName,
+			MemberCount: memberCount,
+		})
+	}
+
+	if results == nil {
+		results = []GroupInfo{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+func (p *Plugin) handleGetGroupMembers(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	groupID := vars["groupId"]
+
+	users, appErr := p.API.GetGroupMemberUsers(groupID, 0, 200)
+	if appErr != nil {
+		http.Error(w, appErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	userIDs := make([]string, 0, len(users))
+	for _, u := range users {
+		userIDs = append(userIDs, u.Id)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string][]string{"user_ids": userIDs})
 }

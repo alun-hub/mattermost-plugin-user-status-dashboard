@@ -1,11 +1,8 @@
 import React from 'react';
 
 import SidebarPanel from './components/sidebar_panel';
-import {PluginRegistry, PluginStore} from './types';
 
 const PLUGIN_ID = 'com.github.alun.user-status-dashboard';
-
-let rhsShowAction: (() => void) | null = null;
 
 const Icon = () => (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -18,19 +15,16 @@ const Icon = () => (
 );
 
 export default class Plugin {
-    public initialize(registry: PluginRegistry, store: PluginStore): void {
-        const {id, showRHSAction} = registry.registerRightHandSidebarComponent(SidebarPanel);
-        rhsShowAction = () => store.dispatch(showRHSAction);
+    public initialize(registry: any, store: any): void {
+        const {toggleRHSPlugin} = registry.registerRightHandSidebarComponent(
+            SidebarPanel,
+            'Status Dashboard',
+        );
 
         registry.registerChannelHeaderButtonAction(
             <Icon />,
-            () => {
-                if (rhsShowAction) {
-                    rhsShowAction();
-                }
-            },
+            () => store.dispatch(toggleRHSPlugin),
             'Status Dashboard',
-            'Open User Status Dashboard',
         );
     }
 }
