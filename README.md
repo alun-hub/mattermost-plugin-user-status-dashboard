@@ -8,6 +8,12 @@ A Mattermost plugin that adds a right-hand sidebar panel for monitoring the stat
 - **Real-time updates** — status changes arrive instantly via WebSocket (`status_change` events), no polling delay.
 - **Custom status** — shows custom status text and emoji for each watched user.
 - **Last activity** — displays when a user was last active.
+- **Drag and drop** — reorder users within sections or move them between folders with smooth drag-and-drop:
+  - Flicker-free highlighting using a drag-enter counter pattern.
+  - Full-section drop targets with background tint and left-border accent.
+  - Insertion line between rows for precise ordering.
+  - Auto-expand collapsed folders after hovering for 500 ms.
+  - Visual feedback: dragged row dims to 40 % opacity and cursor changes to grabbing.
 
 ## Requirements
 

@@ -76,6 +76,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '8px 16px 4px',
         cursor: 'pointer',
         userSelect: 'none' as const,
+        transition: 'background-color 0.15s',
     },
     sectionChevron: {
         fontSize: '12px',
@@ -112,17 +113,6 @@ const styles: Record<string, React.CSSProperties> = {
         lineHeight: 1,
         borderRadius: '2px',
     },
-    dropTarget: {
-        minHeight: '4px',
-        transition: 'all 0.15s',
-    },
-    dropTargetActive: {
-        minHeight: '32px',
-        backgroundColor: 'rgba(var(--button-bg-rgb, 28, 88, 217), 0.08)',
-        border: '2px dashed var(--button-bg)',
-        borderRadius: '4px',
-        margin: '4px 16px',
-    },
     inlineInput: {
         padding: '4px 16px 8px',
     },
@@ -142,7 +132,21 @@ const styles: Record<string, React.CSSProperties> = {
         color: 'rgba(var(--center-channel-color-rgb), 0.40)',
         marginLeft: '4px',
     },
+    folderWrapper: {
+        transition: 'background-color 0.15s, border-left 0.15s',
+        borderLeft: '2px solid transparent',
+    },
+    folderWrapperDragOver: {
+        backgroundColor: 'rgba(var(--button-bg-rgb, 28, 88, 217), 0.06)',
+        borderLeft: '2px solid var(--button-bg)',
+    },
 };
+
+interface InsertIndicator {
+    sectionId: string;
+    userId: string;
+    position: 'above' | 'below';
+}
 
 const SidebarPanel: React.FC = () => {
     const [statusData, setStatusData] = useState<StatusResponse | null>(null);
@@ -155,9 +159,13 @@ const SidebarPanel: React.FC = () => {
     const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
     const [editFolderName, setEditFolderName] = useState('');
     const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [insertIndicator, setInsertIndicator] = useState<InsertIndicator | null>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const newFolderInputRef = useRef<HTMLInputElement>(null);
     const editFolderInputRef = useRef<HTMLInputElement>(null);
+    const dragCounters = useRef<Record<string, number>>({});
+    const autoExpandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const fetchStatuses = useCallback(async () => {
         try {
@@ -366,26 +374,88 @@ const SidebarPanel: React.FC = () => {
     }, [fetchStatuses, fetchWatchedUsers]);
 
     // Drag and drop
+    const clearAutoExpandTimer = useCallback(() => {
+        if (autoExpandTimer.current) {
+            clearTimeout(autoExpandTimer.current);
+            autoExpandTimer.current = null;
+        }
+    }, []);
+
+    const clearAllDragState = useCallback(() => {
+        setDragOverTarget(null);
+        setInsertIndicator(null);
+        setIsDragging(false);
+        dragCounters.current = {};
+        clearAutoExpandTimer();
+    }, [clearAutoExpandTimer]);
+
     const handleDragStart = useCallback((e: React.DragEvent, userId: string) => {
         e.dataTransfer.setData('text/plain', userId);
         e.dataTransfer.effectAllowed = 'move';
+        setIsDragging(true);
     }, []);
 
-    const handleDragOver = useCallback((e: React.DragEvent, targetId: string) => {
+    const handleDragEnd = useCallback(() => {
+        clearAllDragState();
+    }, [clearAllDragState]);
+
+    const handleDragEnter = useCallback((e: React.DragEvent, targetId: string) => {
+        e.preventDefault();
+        if (!dragCounters.current[targetId]) {
+            dragCounters.current[targetId] = 0;
+        }
+        dragCounters.current[targetId]++;
+        setDragOverTarget(targetId);
+
+        // Auto-expand collapsed sections after 500ms
+        if (collapsedSections.has(targetId)) {
+            clearAutoExpandTimer();
+            autoExpandTimer.current = setTimeout(() => {
+                setCollapsedSections((prev) => {
+                    const next = new Set(prev);
+                    next.delete(targetId);
+                    return next;
+                });
+            }, 500);
+        }
+    }, [collapsedSections, clearAutoExpandTimer]);
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        setDragOverTarget(targetId);
     }, []);
 
-    const handleDragLeave = useCallback(() => {
-        setDragOverTarget(null);
+    const handleDragLeave = useCallback((e: React.DragEvent, targetId: string) => {
+        e.preventDefault();
+        if (!dragCounters.current[targetId]) {
+            dragCounters.current[targetId] = 0;
+        }
+        dragCounters.current[targetId]--;
+        if (dragCounters.current[targetId] <= 0) {
+            dragCounters.current[targetId] = 0;
+            setDragOverTarget((prev) => (prev === targetId ? null : prev));
+            clearAutoExpandTimer();
+        }
+    }, [clearAutoExpandTimer]);
+
+    const handleDragOverRow = useCallback((e: React.DragEvent, userId: string, sectionId: string) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const position = e.clientY < rect.top + rect.height / 2 ? 'above' : 'below';
+        setInsertIndicator((prev) => {
+            if (prev && prev.sectionId === sectionId && prev.userId === userId && prev.position === position) {
+                return prev;
+            }
+            return {sectionId, userId, position};
+        });
     }, []);
 
     const handleDrop = useCallback(async (e: React.DragEvent, targetId: string) => {
         e.preventDefault();
-        setDragOverTarget(null);
-
         const userId = e.dataTransfer.getData('text/plain');
+        const currentInsert = insertIndicator;
+
+        clearAllDragState();
+
         if (!userId || !watchedUsers) {
             return;
         }
@@ -400,13 +470,33 @@ const SidebarPanel: React.FC = () => {
             })),
         };
 
-        // Add to target
+        // Add to target at correct position
         if (targetId === 'uncategorized') {
-            updated.user_ids.push(userId);
+            if (currentInsert && currentInsert.sectionId === 'uncategorized') {
+                const idx = updated.user_ids.indexOf(currentInsert.userId);
+                if (idx !== -1) {
+                    const insertIdx = currentInsert.position === 'above' ? idx : idx + 1;
+                    updated.user_ids.splice(insertIdx, 0, userId);
+                } else {
+                    updated.user_ids.push(userId);
+                }
+            } else {
+                updated.user_ids.push(userId);
+            }
         } else {
             const folder = updated.folders.find((f) => f.id === targetId);
             if (folder) {
-                folder.user_ids.push(userId);
+                if (currentInsert && currentInsert.sectionId === targetId) {
+                    const idx = folder.user_ids.indexOf(currentInsert.userId);
+                    if (idx !== -1) {
+                        const insertIdx = currentInsert.position === 'above' ? idx : idx + 1;
+                        folder.user_ids.splice(insertIdx, 0, userId);
+                    } else {
+                        folder.user_ids.push(userId);
+                    }
+                } else {
+                    folder.user_ids.push(userId);
+                }
             }
         }
 
@@ -424,7 +514,11 @@ const SidebarPanel: React.FC = () => {
         } catch (err) {
             // Silently handle errors
         }
-    }, [watchedUsers, fetchStatuses, fetchWatchedUsers]);
+    }, [watchedUsers, insertIndicator, fetchStatuses, fetchWatchedUsers, clearAllDragState]);
+
+    const handleDropOnRow = useCallback((e: React.DragEvent, targetId: string) => {
+        handleDrop(e, targetId);
+    }, [handleDrop]);
 
     useEffect(() => {
         if (creatingFolder && newFolderInputRef.current) {
@@ -437,6 +531,15 @@ const SidebarPanel: React.FC = () => {
             editFolderInputRef.current.focus();
         }
     }, [editingFolderId]);
+
+    // Global dragend cleanup
+    useEffect(() => {
+        const onDragEnd = () => {
+            clearAllDragState();
+        };
+        window.addEventListener('dragend', onDragEnd);
+        return () => window.removeEventListener('dragend', onDragEnd);
+    }, [clearAllDragState]);
 
     const totalUsers = statusData
         ? statusData.uncategorized.length +
@@ -456,6 +559,16 @@ const SidebarPanel: React.FC = () => {
             </div>
         );
     }
+
+    const getInsertPosition = (sectionId: string, userId: string): 'above' | 'below' | null => {
+        if (!insertIndicator) {
+            return null;
+        }
+        if (insertIndicator.sectionId === sectionId && insertIndicator.userId === userId) {
+            return insertIndicator.position;
+        }
+        return null;
+    };
 
     return (
         <div style={styles.container}>
@@ -526,51 +639,68 @@ const SidebarPanel: React.FC = () => {
                         )}
 
                         {/* Uncategorized users */}
-                        {statusData && statusData.uncategorized.length > 0 && (
+                        {statusData && (statusData.uncategorized.length > 0 || statusData.folders.length > 0 || statusData.groups.length > 0) && (
                             <div
-                                onDragOver={(e) => handleDragOver(e, 'uncategorized')}
-                                onDragLeave={handleDragLeave}
+                                style={{
+                                    ...styles.folderWrapper,
+                                    ...(dragOverTarget === 'uncategorized' ? styles.folderWrapperDragOver : {}),
+                                }}
+                                onDragEnter={(e) => handleDragEnter(e, 'uncategorized')}
+                                onDragOver={handleDragOver}
+                                onDragLeave={(e) => handleDragLeave(e, 'uncategorized')}
                                 onDrop={(e) => handleDrop(e, 'uncategorized')}
                             >
-                                <div
-                                    style={{
-                                        ...styles.dropTarget,
-                                        ...(dragOverTarget === 'uncategorized' ? styles.dropTargetActive : {}),
-                                    }}
-                                />
-                                {statusData.uncategorized.map((user) => (
-                                    <UserStatusRow
-                                        key={user.user_id}
-                                        user={user}
-                                        onRemove={handleRemoveUser}
-                                        onDragStart={handleDragStart}
-                                    />
-                                ))}
+                                {statusData.uncategorized.length > 0 ? (
+                                    statusData.uncategorized.map((user) => (
+                                        <UserStatusRow
+                                            key={user.user_id}
+                                            user={user}
+                                            onRemove={handleRemoveUser}
+                                            onDragStart={handleDragStart}
+                                            onDragEnd={handleDragEnd}
+                                            onDragOverRow={(e, uid) => handleDragOverRow(e, uid, 'uncategorized')}
+                                            onDropRow={(e) => handleDropOnRow(e, 'uncategorized')}
+                                            insertPosition={getInsertPosition('uncategorized', user.user_id)}
+                                        />
+                                    ))
+                                ) : isDragging ? (
+                                    <div
+                                        style={{
+                                            padding: '8px 16px',
+                                            fontSize: '12px',
+                                            color: 'rgba(var(--center-channel-color-rgb), 0.40)',
+                                            fontStyle: 'italic',
+                                        }}
+                                    >
+                                        Drop here for uncategorized
+                                    </div>
+                                ) : null}
                             </div>
-                        )}
-
-                        {/* Empty drop target for uncategorized when empty but folders exist */}
-                        {statusData && statusData.uncategorized.length === 0 && (statusData.folders.length > 0 || statusData.groups.length > 0) && (
-                            <div
-                                onDragOver={(e) => handleDragOver(e, 'uncategorized')}
-                                onDragLeave={handleDragLeave}
-                                onDrop={(e) => handleDrop(e, 'uncategorized')}
-                                style={{
-                                    ...styles.dropTarget,
-                                    ...(dragOverTarget === 'uncategorized' ? styles.dropTargetActive : {}),
-                                }}
-                            />
                         )}
 
                         {/* Folders */}
                         {statusData?.folders.map((folder) => {
                             const isCollapsed = collapsedSections.has(folder.id);
                             const isEditing = editingFolderId === folder.id;
+                            const isDragOver = dragOverTarget === folder.id;
 
                             return (
-                                <div key={folder.id}>
+                                <div
+                                    key={folder.id}
+                                    style={{
+                                        ...styles.folderWrapper,
+                                        ...(isDragOver ? styles.folderWrapperDragOver : {}),
+                                    }}
+                                    onDragEnter={(e) => handleDragEnter(e, folder.id)}
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={(e) => handleDragLeave(e, folder.id)}
+                                    onDrop={(e) => handleDrop(e, folder.id)}
+                                >
                                     <div
-                                        style={styles.sectionHeader}
+                                        style={{
+                                            ...styles.sectionHeader,
+                                            ...(isDragOver ? {backgroundColor: 'rgba(var(--button-bg-rgb, 28, 88, 217), 0.10)'} : {}),
+                                        }}
                                         onClick={() => toggleSection(folder.id)}
                                         onMouseEnter={(e) => {
                                             const actions = e.currentTarget.querySelector('[data-section-actions]') as HTMLElement;
@@ -649,26 +779,20 @@ const SidebarPanel: React.FC = () => {
                                     )}
 
                                     {!isCollapsed && (
-                                        <div
-                                            onDragOver={(e) => handleDragOver(e, folder.id)}
-                                            onDragLeave={handleDragLeave}
-                                            onDrop={(e) => handleDrop(e, folder.id)}
-                                        >
-                                            <div
-                                                style={{
-                                                    ...styles.dropTarget,
-                                                    ...(dragOverTarget === folder.id ? styles.dropTargetActive : {}),
-                                                }}
-                                            />
+                                        <div>
                                             {folder.users.map((user) => (
                                                 <UserStatusRow
                                                     key={user.user_id}
                                                     user={user}
                                                     onRemove={handleRemoveUser}
                                                     onDragStart={handleDragStart}
+                                                    onDragEnd={handleDragEnd}
+                                                    onDragOverRow={(e, uid) => handleDragOverRow(e, uid, folder.id)}
+                                                    onDropRow={(e) => handleDropOnRow(e, folder.id)}
+                                                    insertPosition={getInsertPosition(folder.id, user.user_id)}
                                                 />
                                             ))}
-                                            {folder.users.length === 0 && dragOverTarget !== folder.id && (
+                                            {folder.users.length === 0 && !isDragOver && (
                                                 <div
                                                     style={{
                                                         padding: '8px 16px',

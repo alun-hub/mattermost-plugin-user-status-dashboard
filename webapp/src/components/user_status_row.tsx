@@ -6,6 +6,10 @@ interface Props {
     user: UserStatusInfo;
     onRemove: (userId: string) => void;
     onDragStart?: (e: React.DragEvent, userId: string) => void;
+    onDragEnd?: (e: React.DragEvent) => void;
+    onDragOverRow?: (e: React.DragEvent, userId: string) => void;
+    onDropRow?: (e: React.DragEvent, userId: string) => void;
+    insertPosition?: 'above' | 'below' | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -56,6 +60,13 @@ function getDisplayName(user: UserStatusInfo): string {
     }
     return user.username;
 }
+
+const insertionLineStyle: React.CSSProperties = {
+    height: '2px',
+    backgroundColor: 'var(--button-bg)',
+    margin: '0 16px',
+    borderRadius: '1px',
+};
 
 const styles: Record<string, React.CSSProperties> = {
     row: {
@@ -160,7 +171,7 @@ const styles: Record<string, React.CSSProperties> = {
     },
 };
 
-const UserStatusRow: React.FC<Props> = ({user, onRemove, onDragStart}) => {
+const UserStatusRow: React.FC<Props> = ({user, onRemove, onDragStart, onDragEnd, onDragOverRow, onDropRow, insertPosition}) => {
     const displayName = getDisplayName(user);
     const initials = displayName.charAt(0).toUpperCase();
     const statusColor = STATUS_COLORS[user.status] || STATUS_COLORS.offline;
@@ -179,96 +190,123 @@ const UserStatusRow: React.FC<Props> = ({user, onRemove, onDragStart}) => {
     };
 
     return (
-        <div
-            style={styles.row}
-            draggable={Boolean(onDragStart)}
-            onDragStart={(e) => {
-                if (onDragStart) {
-                    onDragStart(e, user.user_id);
-                }
-            }}
-            onClick={handleClick}
-            onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.backgroundColor =
-                    'rgba(var(--center-channel-color-rgb), 0.04)';
-                const btn = e.currentTarget.querySelector('[data-remove-btn]') as HTMLElement;
-                if (btn) {
-                    btn.style.opacity = '1';
-                }
-                const handle = e.currentTarget.querySelector('[data-drag-handle]') as HTMLElement;
-                if (handle) {
-                    handle.style.opacity = '1';
-                }
-            }}
-            onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
-                const btn = e.currentTarget.querySelector('[data-remove-btn]') as HTMLElement;
-                if (btn) {
-                    btn.style.opacity = '0';
-                }
-                const handle = e.currentTarget.querySelector('[data-drag-handle]') as HTMLElement;
-                if (handle) {
-                    handle.style.opacity = '0';
-                }
-            }}
-            title={`Message @${user.username}`}
-        >
-            {onDragStart && (
-                <div
-                    data-drag-handle=""
-                    style={styles.dragHandle}
-                    onMouseDown={(e) => e.stopPropagation()}
-                >
-                    {'⋮⋮'}
-                </div>
-            )}
-
-            <div style={styles.avatar}>
-                <img
-                    style={styles.avatarImg}
-                    src={`/api/v4/users/${user.user_id}/image?_=${user.last_activity_at || 0}`}
-                    alt={initials}
-                />
-                <div
-                    style={{
-                        ...styles.statusDot,
-                        backgroundColor: statusColor,
-                    }}
-                />
-            </div>
-
-            <div style={styles.info}>
-                <div style={styles.nameRow}>
-                    <span style={styles.name}>{displayName}</span>
-                    {displayName !== user.username && (
-                        <span style={styles.username}>@{user.username}</span>
-                    )}
-                </div>
-                <div style={styles.statusLine}>
-                    <span style={styles.statusText}>{statusLabel}</span>
-                    {user.custom_status && (
-                        <span style={styles.customStatus}>
-                            {user.custom_emoji && `${user.custom_emoji} `}
-                            {user.custom_status}
-                        </span>
-                    )}
-                    {lastActivity && (
-                        <span style={styles.lastActivity}>{lastActivity}</span>
-                    )}
-                </div>
-            </div>
-
-            <button
-                data-remove-btn=""
-                style={styles.removeButton}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(user.user_id);
+        <div>
+            {insertPosition === 'above' && <div style={insertionLineStyle}/>}
+            <div
+                style={styles.row}
+                draggable={Boolean(onDragStart)}
+                onDragStart={(e) => {
+                    if (onDragStart) {
+                        onDragStart(e, user.user_id);
+                    }
+                    e.currentTarget.style.opacity = '0.4';
+                    document.body.style.cursor = 'grabbing';
                 }}
-                title="Remove from watchlist"
+                onDragEnd={(e) => {
+                    e.currentTarget.style.opacity = '1';
+                    document.body.style.cursor = '';
+                    if (onDragEnd) {
+                        onDragEnd(e);
+                    }
+                }}
+                onDragOver={(e) => {
+                    if (onDragOverRow) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        onDragOverRow(e, user.user_id);
+                    }
+                }}
+                onDrop={(e) => {
+                    if (onDropRow) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onDropRow(e, user.user_id);
+                    }
+                }}
+                onClick={handleClick}
+                onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor =
+                        'rgba(var(--center-channel-color-rgb), 0.04)';
+                    const btn = e.currentTarget.querySelector('[data-remove-btn]') as HTMLElement;
+                    if (btn) {
+                        btn.style.opacity = '1';
+                    }
+                    const handle = e.currentTarget.querySelector('[data-drag-handle]') as HTMLElement;
+                    if (handle) {
+                        handle.style.opacity = '1';
+                    }
+                }}
+                onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                    const btn = e.currentTarget.querySelector('[data-remove-btn]') as HTMLElement;
+                    if (btn) {
+                        btn.style.opacity = '0';
+                    }
+                    const handle = e.currentTarget.querySelector('[data-drag-handle]') as HTMLElement;
+                    if (handle) {
+                        handle.style.opacity = '0';
+                    }
+                }}
+                title={`Message @${user.username}`}
             >
-                &times;
-            </button>
+                {onDragStart && (
+                    <div
+                        data-drag-handle=""
+                        style={styles.dragHandle}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        {'⋮⋮'}
+                    </div>
+                )}
+
+                <div style={styles.avatar}>
+                    <img
+                        style={styles.avatarImg}
+                        src={`/api/v4/users/${user.user_id}/image?_=${user.last_activity_at || 0}`}
+                        alt={initials}
+                    />
+                    <div
+                        style={{
+                            ...styles.statusDot,
+                            backgroundColor: statusColor,
+                        }}
+                    />
+                </div>
+
+                <div style={styles.info}>
+                    <div style={styles.nameRow}>
+                        <span style={styles.name}>{displayName}</span>
+                        {displayName !== user.username && (
+                            <span style={styles.username}>@{user.username}</span>
+                        )}
+                    </div>
+                    <div style={styles.statusLine}>
+                        <span style={styles.statusText}>{statusLabel}</span>
+                        {user.custom_status && (
+                            <span style={styles.customStatus}>
+                                {user.custom_emoji && `${user.custom_emoji} `}
+                                {user.custom_status}
+                            </span>
+                        )}
+                        {lastActivity && (
+                            <span style={styles.lastActivity}>{lastActivity}</span>
+                        )}
+                    </div>
+                </div>
+
+                <button
+                    data-remove-btn=""
+                    style={styles.removeButton}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRemove(user.user_id);
+                    }}
+                    title="Remove from watchlist"
+                >
+                    &times;
+                </button>
+            </div>
+            {insertPosition === 'below' && <div style={insertionLineStyle}/>}
         </div>
     );
 };
