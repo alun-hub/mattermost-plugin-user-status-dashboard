@@ -1,0 +1,21 @@
+{
+    "id": "com.github.alun.user-status-dashboard",
+    "name": "User Status Dashboard",
+    "description": "A sidebar panel showing detailed status for user-selected people including online/offline/away/dnd, custom status text, and last activity.",
+    "homepage_url": "https://github.com/alun/mattermost-plugin-user-status-dashboard",
+    "support_url": "https://github.com/alun/mattermost-plugin-user-status-dashboard/issues",
+    "icon_path": "assets/icon.svg",
+    "min_server_version": "9.0.0",
+    "server": {
+        "executables": {
+            "linux-amd64": "server/dist/plugin-linux-amd64",
+            "linux-arm64": "server/dist/plugin-linux-arm64",
+            "darwin-amd64": "server/dist/plugin-darwin-amd64",
+            "darwin-arm64": "server/dist/plugin-darwin-arm64"
+        },
+        "executable": ""
+    },
+    "webapp": {
+        "bundle_path": "webapp/dist/main.js"
+    }
+}

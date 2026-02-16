@@ -1,0 +1,8 @@
+dist/
+node_modules/
+webapp/dist/
+server/dist/
+server/.depensure
+webapp/.npminstall
+*.tar.gz
+.DS_Store
