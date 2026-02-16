@@ -5,6 +5,7 @@ import {UserStatusInfo} from '../types';
 interface Props {
     user: UserStatusInfo;
     onRemove: (userId: string) => void;
+    onDragStart?: (e: React.DragEvent, userId: string) => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -64,6 +65,20 @@ const styles: Record<string, React.CSSProperties> = {
         cursor: 'pointer',
         transition: 'background-color 0.15s',
         position: 'relative',
+    },
+    dragHandle: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '16px',
+        marginRight: '6px',
+        cursor: 'grab',
+        opacity: 0,
+        transition: 'opacity 0.15s',
+        color: 'rgba(var(--center-channel-color-rgb), 0.40)',
+        fontSize: '10px',
+        flexShrink: 0,
+        userSelect: 'none' as const,
     },
     avatar: {
         width: '32px',
@@ -145,7 +160,7 @@ const styles: Record<string, React.CSSProperties> = {
     },
 };
 
-const UserStatusRow: React.FC<Props> = ({user, onRemove}) => {
+const UserStatusRow: React.FC<Props> = ({user, onRemove, onDragStart}) => {
     const displayName = getDisplayName(user);
     const initials = displayName.charAt(0).toUpperCase();
     const statusColor = STATUS_COLORS[user.status] || STATUS_COLORS.offline;
@@ -166,6 +181,12 @@ const UserStatusRow: React.FC<Props> = ({user, onRemove}) => {
     return (
         <div
             style={styles.row}
+            draggable={Boolean(onDragStart)}
+            onDragStart={(e) => {
+                if (onDragStart) {
+                    onDragStart(e, user.user_id);
+                }
+            }}
             onClick={handleClick}
             onMouseEnter={(e) => {
                 (e.currentTarget as HTMLElement).style.backgroundColor =
@@ -174,6 +195,10 @@ const UserStatusRow: React.FC<Props> = ({user, onRemove}) => {
                 if (btn) {
                     btn.style.opacity = '1';
                 }
+                const handle = e.currentTarget.querySelector('[data-drag-handle]') as HTMLElement;
+                if (handle) {
+                    handle.style.opacity = '1';
+                }
             }}
             onMouseLeave={(e) => {
                 (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
@@ -181,9 +206,23 @@ const UserStatusRow: React.FC<Props> = ({user, onRemove}) => {
                 if (btn) {
                     btn.style.opacity = '0';
                 }
+                const handle = e.currentTarget.querySelector('[data-drag-handle]') as HTMLElement;
+                if (handle) {
+                    handle.style.opacity = '0';
+                }
             }}
             title={`Message @${user.username}`}
         >
+            {onDragStart && (
+                <div
+                    data-drag-handle=""
+                    style={styles.dragHandle}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    {'⋮⋮'}
+                </div>
+            )}
+
             <div style={styles.avatar}>
                 <img
                     style={styles.avatarImg}

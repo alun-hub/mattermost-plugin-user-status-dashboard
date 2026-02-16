@@ -1,11 +1,13 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 
+import {WatchedUsersV2} from '../types';
+
 const PLUGIN_ID = 'com.github.alun.user-status-dashboard';
 
 interface Props {
     onClose: () => void;
     onUserAdded: () => void;
-    currentUserIds: string[];
+    watchedUsers: WatchedUsersV2;
 }
 
 interface SearchResult {
@@ -166,6 +168,25 @@ const styles: Record<string, React.CSSProperties> = {
         color: 'rgba(var(--center-channel-color-rgb), 0.56)',
         fontSize: '14px',
     },
+    folderSelect: {
+        padding: '8px 20px 4px',
+    },
+    folderSelectLabel: {
+        fontSize: '12px',
+        color: 'rgba(var(--center-channel-color-rgb), 0.56)',
+        marginBottom: '4px',
+    },
+    folderSelectField: {
+        width: '100%',
+        padding: '6px 8px',
+        border: '1px solid rgba(var(--center-channel-color-rgb), 0.16)',
+        borderRadius: '4px',
+        fontSize: '13px',
+        backgroundColor: 'var(--center-channel-bg)',
+        color: 'var(--center-channel-color)',
+        outline: 'none',
+        boxSizing: 'border-box' as const,
+    },
 };
 
 function getDisplayName(user: SearchResult): string {
@@ -178,15 +199,27 @@ function getDisplayName(user: SearchResult): string {
     return user.username;
 }
 
-const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) => {
+function getAllWatchedUserIds(watchedUsers: WatchedUsersV2): string[] {
+    const ids = [...watchedUsers.user_ids];
+    for (const folder of watchedUsers.folders) {
+        ids.push(...folder.user_ids);
+    }
+    return ids;
+}
+
+const UserSelector: React.FC<Props> = ({onClose, onUserAdded, watchedUsers}) => {
     const [activeTab, setActiveTab] = useState<Tab>('users');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchResult[]>([]);
     const [groupResults, setGroupResults] = useState<GroupResult[]>([]);
     const [searching, setSearching] = useState(false);
     const [addingGroup, setAddingGroup] = useState(false);
+    const [targetFolderId, setTargetFolderId] = useState<string>('');
     const inputRef = useRef<HTMLInputElement>(null);
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const allWatchedUserIds = getAllWatchedUserIds(watchedUsers);
+    const watchedGroupIds = watchedUsers.groups.map((g) => g.group_id);
 
     useEffect(() => {
         inputRef.current?.focus();
@@ -262,7 +295,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
     }, []);
 
     const handleAddUser = useCallback(async (userId: string) => {
-        if (currentUserIds.includes(userId)) {
+        if (allWatchedUserIds.includes(userId)) {
             return;
         }
 
@@ -273,79 +306,83 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
             if (!resp.ok) {
                 return;
             }
-            const data = await resp.json();
-            const userIds: string[] = data.user_ids || [];
+            const data: WatchedUsersV2 = await resp.json();
 
-            if (!userIds.includes(userId)) {
-                userIds.push(userId);
+            if (targetFolderId) {
+                // Add to specific folder
+                const updated: WatchedUsersV2 = {
+                    ...data,
+                    folders: data.folders.map((f) =>
+                        f.id === targetFolderId && !f.user_ids.includes(userId)
+                            ? {...f, user_ids: [...f.user_ids, userId]}
+                            : f,
+                    ),
+                };
+                await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify(updated),
+                });
+            } else {
+                // Add to uncategorized
+                const userIds = data.user_ids || [];
+                if (!userIds.includes(userId)) {
+                    userIds.push(userId);
+                }
+                const updated: WatchedUsersV2 = {...data, user_ids: userIds};
+                await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify(updated),
+                });
             }
-
-            await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({user_ids: userIds}),
-            });
 
             onUserAdded();
             onClose();
         } catch (err) {
             // Silently handle errors
         }
-    }, [currentUserIds, onUserAdded, onClose]);
+    }, [allWatchedUserIds, targetFolderId, onUserAdded, onClose]);
 
-    const handleAddGroup = useCallback(async (groupId: string) => {
+    const handleAddGroup = useCallback(async (groupId: string, displayName: string) => {
+        if (watchedGroupIds.includes(groupId)) {
+            return;
+        }
+
         setAddingGroup(true);
         try {
-            const membersResp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/groups/${encodeURIComponent(groupId)}/members`, {
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
-            if (!membersResp.ok) {
-                return;
-            }
-            const membersData = await membersResp.json();
-            const memberIds: string[] = membersData.user_ids || [];
-
-            const watchedResp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
-            if (!watchedResp.ok) {
-                return;
-            }
-            const watchedData = await watchedResp.json();
-            const existingIds: string[] = watchedData.user_ids || [];
-
-            const merged = [...existingIds];
-            for (const id of memberIds) {
-                if (!merged.includes(id)) {
-                    merged.push(id);
-                }
-            }
-
-            await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                method: 'PUT',
+            const resp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-groups`, {
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                 },
-                body: JSON.stringify({user_ids: merged}),
+                body: JSON.stringify({group_id: groupId, display_name: displayName}),
             });
 
-            onUserAdded();
-            onClose();
+            if (resp.ok) {
+                onUserAdded();
+                onClose();
+            }
         } catch (err) {
             // Silently handle errors
         } finally {
             setAddingGroup(false);
         }
-    }, [onUserAdded, onClose]);
+    }, [watchedGroupIds, onUserAdded, onClose]);
 
     const tabStyle = (tab: Tab): React.CSSProperties => ({
         ...styles.tab,
         ...(activeTab === tab ? styles.tabActive : {}),
     });
+
+    const hasFolders = watchedUsers.folders.length > 0;
 
     return (
         <div style={styles.overlay} onClick={onClose}>
@@ -372,6 +409,22 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
                     </button>
                 </div>
 
+                {activeTab === 'users' && hasFolders && (
+                    <div style={styles.folderSelect}>
+                        <div style={styles.folderSelectLabel}>Add to:</div>
+                        <select
+                            style={styles.folderSelectField}
+                            value={targetFolderId}
+                            onChange={(e) => setTargetFolderId(e.target.value)}
+                        >
+                            <option value="">Uncategorized</option>
+                            {watchedUsers.folders.map((f) => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
                 <div style={styles.searchContainer}>
                     <input
                         ref={inputRef}
@@ -386,7 +439,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
                 <div style={styles.results}>
                     {(searching || addingGroup) && (
                         <div style={styles.noResults}>
-                            {addingGroup ? 'Adding group members...' : 'Searching...'}
+                            {addingGroup ? 'Adding group...' : 'Searching...'}
                         </div>
                     )}
 
@@ -397,7 +450,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
                             )}
 
                             {results.map((user) => {
-                                const isAdded = currentUserIds.includes(user.id);
+                                const isAdded = allWatchedUserIds.includes(user.id);
                                 const displayName = getDisplayName(user);
                                 const initial = displayName.charAt(0).toUpperCase();
 
@@ -455,15 +508,22 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
                             {groupResults.map((group) => {
                                 const displayName = group.display_name || group.name;
                                 const initial = displayName.charAt(0).toUpperCase();
+                                const isWatched = watchedGroupIds.includes(group.id);
 
                                 return (
                                     <div
                                         key={group.id}
-                                        style={styles.resultItem}
-                                        onClick={() => handleAddGroup(group.id)}
+                                        style={{
+                                            ...styles.resultItem,
+                                            opacity: isWatched ? 0.5 : 1,
+                                            cursor: isWatched ? 'default' : 'pointer',
+                                        }}
+                                        onClick={() => handleAddGroup(group.id, displayName)}
                                         onMouseEnter={(e) => {
-                                            (e.currentTarget as HTMLElement).style.backgroundColor =
-                                                'rgba(var(--center-channel-color-rgb), 0.08)';
+                                            if (!isWatched) {
+                                                (e.currentTarget as HTMLElement).style.backgroundColor =
+                                                    'rgba(var(--center-channel-color-rgb), 0.08)';
+                                            }
                                         }}
                                         onMouseLeave={(e) => {
                                             (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
@@ -476,6 +536,9 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, currentUserIds}) =
                                                 {group.member_count} {group.member_count === 1 ? 'member' : 'members'}
                                             </div>
                                         </div>
+                                        {isWatched && (
+                                            <span style={styles.alreadyAdded}>Already watching</span>
+                                        )}
                                     </div>
                                 );
                             })}

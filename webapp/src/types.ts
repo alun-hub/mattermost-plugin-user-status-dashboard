@@ -10,6 +10,42 @@ export interface UserStatusInfo {
     last_activity_at: number;
 }
 
+export interface Folder {
+    id: string;
+    name: string;
+    user_ids: string[];
+}
+
+export interface WatchedGroup {
+    group_id: string;
+    display_name: string;
+}
+
+export interface WatchedUsersV2 {
+    version: number;
+    user_ids: string[];
+    folders: Folder[];
+    groups: WatchedGroup[];
+}
+
+export interface FolderWithStatuses {
+    id: string;
+    name: string;
+    users: UserStatusInfo[];
+}
+
+export interface GroupWithStatuses {
+    group_id: string;
+    display_name: string;
+    users: UserStatusInfo[];
+}
+
+export interface StatusResponse {
+    uncategorized: UserStatusInfo[];
+    folders: FolderWithStatuses[];
+    groups: GroupWithStatuses[];
+}
+
 export interface WatchedUsers {
     user_ids: string[];
 }
