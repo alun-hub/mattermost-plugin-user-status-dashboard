@@ -1,11 +1,10 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 
+import {doDelete, doGet, doPost, doPut, pluginApiUrl} from '../client';
 import {StatusResponse, UserStatusInfo, WatchedUsersV2} from '../types';
 
 import UserSelector from './user_selector';
 import UserStatusRow from './user_status_row';
-
-const PLUGIN_ID = 'com.github.alun.user-status-dashboard';
 const FALLBACK_POLL_INTERVAL = 300000; // 5 min fallback for custom status changes
 
 const styles: Record<string, React.CSSProperties> = {
@@ -169,9 +168,7 @@ const SidebarPanel: React.FC = () => {
 
     const fetchStatuses = useCallback(async () => {
         try {
-            const resp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/statuses`, {
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
+            const resp = await doGet(pluginApiUrl('/statuses'));
             if (resp.ok) {
                 const data: StatusResponse = await resp.json();
                 setStatusData(data);
@@ -185,9 +182,7 @@ const SidebarPanel: React.FC = () => {
 
     const fetchWatchedUsers = useCallback(async () => {
         try {
-            const resp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
+            const resp = await doGet(pluginApiUrl('/watched-users'));
             if (resp.ok) {
                 const data: WatchedUsersV2 = await resp.json();
                 setWatchedUsers(data);
@@ -273,14 +268,7 @@ const SidebarPanel: React.FC = () => {
         };
 
         try {
-            await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify(updated),
-            });
+            await doPut(pluginApiUrl('/watched-users'), updated);
             fetchStatuses();
             fetchWatchedUsers();
         } catch (err) {
@@ -307,14 +295,7 @@ const SidebarPanel: React.FC = () => {
             return;
         }
         try {
-            await fetch(`/plugins/${PLUGIN_ID}/api/v1/folders`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({name}),
-            });
+            await doPost(pluginApiUrl('/folders'), {name});
             setCreatingFolder(false);
             setNewFolderName('');
             fetchStatuses();
@@ -330,14 +311,7 @@ const SidebarPanel: React.FC = () => {
             return;
         }
         try {
-            await fetch(`/plugins/${PLUGIN_ID}/api/v1/folders/${encodeURIComponent(folderId)}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({name}),
-            });
+            await doPut(pluginApiUrl(`/folders/${encodeURIComponent(folderId)}`), {name});
             setEditingFolderId(null);
             setEditFolderName('');
             fetchStatuses();
@@ -349,10 +323,7 @@ const SidebarPanel: React.FC = () => {
 
     const handleDeleteFolder = useCallback(async (folderId: string) => {
         try {
-            await fetch(`/plugins/${PLUGIN_ID}/api/v1/folders/${encodeURIComponent(folderId)}`, {
-                method: 'DELETE',
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
+            await doDelete(pluginApiUrl(`/folders/${encodeURIComponent(folderId)}`));
             fetchStatuses();
             fetchWatchedUsers();
         } catch (err) {
@@ -362,10 +333,7 @@ const SidebarPanel: React.FC = () => {
 
     const handleRemoveGroup = useCallback(async (groupId: string) => {
         try {
-            await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-groups/${encodeURIComponent(groupId)}`, {
-                method: 'DELETE',
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
+            await doDelete(pluginApiUrl(`/watched-groups/${encodeURIComponent(groupId)}`));
             fetchStatuses();
             fetchWatchedUsers();
         } catch (err) {
@@ -501,14 +469,7 @@ const SidebarPanel: React.FC = () => {
         }
 
         try {
-            await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify(updated),
-            });
+            await doPut(pluginApiUrl('/watched-users'), updated);
             fetchStatuses();
             fetchWatchedUsers();
         } catch (err) {

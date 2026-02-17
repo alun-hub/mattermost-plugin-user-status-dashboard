@@ -1,8 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 
+import {doGet, doPost, doPut, pluginApiUrl} from '../client';
 import {WatchedUsersV2} from '../types';
-
-const PLUGIN_ID = 'com.github.alun.user-status-dashboard';
 
 interface Props {
     onClose: () => void;
@@ -233,9 +232,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, watchedUsers}) => 
 
         setSearching(true);
         try {
-            const resp = await fetch('/api/v4/users/autocomplete?name=' + encodeURIComponent(term), {
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
+            const resp = await doGet('/api/v4/users/autocomplete?name=' + encodeURIComponent(term));
             if (resp.ok) {
                 const data = await resp.json();
                 setResults(data.users || []);
@@ -255,9 +252,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, watchedUsers}) => 
 
         setSearching(true);
         try {
-            const resp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/groups?q=` + encodeURIComponent(term), {
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
+            const resp = await doGet(pluginApiUrl('/groups?q=') + encodeURIComponent(term));
             if (resp.ok) {
                 const data: GroupResult[] = await resp.json();
                 setGroupResults(data);
@@ -300,9 +295,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, watchedUsers}) => 
         }
 
         try {
-            const resp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                headers: {'X-Requested-With': 'XMLHttpRequest'},
-            });
+            const resp = await doGet(pluginApiUrl('/watched-users'));
             if (!resp.ok) {
                 return;
             }
@@ -318,14 +311,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, watchedUsers}) => 
                             : f,
                     ),
                 };
-                await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                    body: JSON.stringify(updated),
-                });
+                await doPut(pluginApiUrl('/watched-users'), updated);
             } else {
                 // Add to uncategorized
                 const userIds = data.user_ids || [];
@@ -333,14 +319,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, watchedUsers}) => 
                     userIds.push(userId);
                 }
                 const updated: WatchedUsersV2 = {...data, user_ids: userIds};
-                await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-users`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                    body: JSON.stringify(updated),
-                });
+                await doPut(pluginApiUrl('/watched-users'), updated);
             }
 
             onUserAdded();
@@ -357,14 +336,7 @@ const UserSelector: React.FC<Props> = ({onClose, onUserAdded, watchedUsers}) => 
 
         setAddingGroup(true);
         try {
-            const resp = await fetch(`/plugins/${PLUGIN_ID}/api/v1/watched-groups`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({group_id: groupId, display_name: displayName}),
-            });
+            const resp = await doPost(pluginApiUrl('/watched-groups'), {group_id: groupId, display_name: displayName});
 
             if (resp.ok) {
                 onUserAdded();
